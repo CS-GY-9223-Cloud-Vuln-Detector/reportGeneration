@@ -6,6 +6,7 @@
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{longtable}
+\usepackage{listings}
 \geometry{margin=1in}
 
 \titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
@@ -28,7 +29,15 @@ The digital era has fostered a dramatic increase in the scale and complexity of 
 \subsection{Motivation}
 Modern DevOps pipelines integrate testing and CI/CD, yet security scanning is often an afterthought. Developers may unintentionally introduce vulnerabilities like hardcoded secrets or fail to properly sanitize inputs. This project intends to close this gap by providing an automated, extensible vulnerability scanner that plugs directly into the development workflow.
 
-\subsection{Goals}
+\section*{Team Members}
+\begin{itemize}
+    \item Aranya Aryaman (aa12939)
+    \item Tejeshu Mutte (tm4258)
+    \item Ambica Bhatia (ab12624)
+    \item Aninda Ghosh (ag10293)
+\end{itemize}
+
+\section{End Goals}
 \begin{itemize}
     \item Build a modular, microservices-based architecture.
     \item Automatically parse and clone GitHub repositories.
@@ -37,21 +46,20 @@ Modern DevOps pipelines integrate testing and CI/CD, yet security scanning is of
     \item Enable extensibility for CI/CD integration and user authentication.
 \end{itemize}
 
-\section{System Architecture}
+\section{Core System Architecture}
 The platform is divided into three independent services:
-
 \begin{enumerate}
-    \item \textbf{URL Parser} (Tejeshu): Parses GitHub repositories, extracts files recursively.
+    \item \textbf{URL Parser} (Tejeshu): Parses GitHub repositories and extracts files recursively.
     \item \textbf{Vulnerability Detection} (Ambica and Aninda): Runs security scans using Bandit.
-    \item \textbf{Report Generation and Frontend} (Aranya): Renders PDF and web UI.
+    \item \textbf{Report Generation and Frontend} (Aranya): Compiles the vulnerabilites, renders PDF and web UI.
 \end{enumerate}
 
-Each of these microservices reads from and writes to a shared Supabase PostgreSQL instance. This ensures a seamless data pipeline for integration and consistency.
+Each of these microservices reads from and writes to a shared Supabase PostgreSQL instance, ensuring a seamless data pipeline for integration and consistency.
 
 \subsection{Component Interaction}
 \begin{itemize}
-    \item URL Parser identifies files and metadata, and inserts records into `files` table.
-    \item Vulnerability Scanner picks up pending files and adds corresponding issues into the `vulnerabilities` table.
+    \item URL Parser identifies files and metadata, and inserts records into the \texttt{files} table.
+    \item Vulnerability Scanner picks up pending files and adds corresponding issues into the \texttt{vulnerabilities} table.
     \item Report Generator fetches all data and converts it into structured reports.
 \end{itemize}
 
@@ -63,12 +71,12 @@ Each of these microservices reads from and writes to a shared Supabase PostgreSQ
 
 \section{Database Schema and Design}
 Supabase offers a fully managed PostgreSQL backend with a REST interface. Our schema includes:
+
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.95\textwidth]{WhatsApp Image 2025-03-16 at 00.22.09 (1).jpeg}
 \caption{Database Diagram}
 \end{figure}
-
 
 \subsection{Supabase Features Used}
 \begin{itemize}
@@ -77,23 +85,112 @@ Supabase offers a fully managed PostgreSQL backend with a REST interface. Our sc
     \item Real-time listening for new file additions
 \end{itemize}
 
-\section{Implementation Details}
-\subsection{URL Parser: Tejeshu}
+\section{Detailed Explanation of Each Service and Scaling Approach}
+
+\subsection{URL Parser Service (Flask + GitPython)}
+This service allows users to input a GitHub URL, clone the repository, find all Python files, upload them to Supabase storage, and store their metadata in the database.
+
+\subsubsection{Key Functions}
 \begin{itemize}
-    \item Parses and validates GitHub URLs.
-    \item Recursively fetches Python files using GitHub API.
-    \item Stores metadata in Supabase.
-    \item Handles private/public URLs (to be extended with OAuth).
+    \item \textbf{Flask Endpoint:} Defines a POST route at \texttt{/parse}, where the JSON payload contains a GitHub URL.
+    \item \textbf{GitHubParser Class:}
+    \begin{itemize}
+        \item \texttt{clone\_repo()} clones the repository to a temporary directory.
+        \item \texttt{find\_python\_files()} searches for \texttt{.py} files recursively.
+        \item \texttt{upload\_files()} uploads files to Supabase Storage and inserts metadata via \texttt{add\_file()} helper.
+        \item \texttt{clean\_up()} deletes the cloned files.
+        \item \texttt{process()} coordinates the entire workflow.
+    \end{itemize}
 \end{itemize}
 
-\subsection{Vulnerability Detection: Ambica and Aninda}
-\textbf{Tools Used:} Bandit – a static analyzer for Python code.
+\subsubsection{Scalability Considerations}
 \begin{itemize}
-    \item Fetches files from DB using Supabase SDK.
-    \item Runs Bandit and extracts JSON output.
-    \item Categorizes vulnerabilities by type and severity.
-    \item Adds remediation advice for each finding.
+    \item Wrap \texttt{parser.process()} in a Celery job to decouple frontend and long-running tasks.
+    \item Use S3 for storage instead of Supabase if targeting AWS for scale.
+    \item Dockerize Flask app and deploy on ECS Fargate.
 \end{itemize}
+
+\subsubsection{Example: GitHubParser Initialization}
+\begin{lstlisting}[language=Python]
+parser = GitHubParser(repo_url)
+uploaded_files, file_ids, project_id = parser.process()
+\end{lstlisting}
+
+\subsection{Frontend Interface (Vanilla JS + HTML)}
+The frontend allows users to paste a GitHub link and submit it via a button. It then displays a summary of uploaded files.
+
+\subsubsection{Key Features}
+\begin{itemize}
+    \item Collects URL using \texttt{document.getElementById}.
+    \item Uses \texttt{fetch()} with POST to \texttt{/parse}.
+    \item Displays a dynamically generated success or error message.
+\end{itemize}
+
+\subsubsection{Scalability Considerations}
+\begin{itemize}
+    \item Replace with React/Next.js for reactivity and scalability.
+    \item Move logic to backend (e.g., job queue polling) to improve UX.
+    \item Host on CDN (e.g., CloudFront) for performance.
+\end{itemize}
+
+\subsection{Vulnerability Scanner (Bandit Wrapper)}
+This script runs Bandit on a local directory and parses its JSON output.
+
+\subsubsection{Key Features}
+\begin{itemize}
+    \item Uses \texttt{subprocess.run()} to run Bandit with a \texttt{pyproject.toml} config.
+    \item Outputs results to a temporary file.
+    \item Parses and returns the report.
+\end{itemize}
+
+\subsubsection{Scalability Improvements}
+\begin{itemize}
+    \item Isolate scanning in a job queue.
+    \item Containerize for consistent execution.
+    \item Parallelize scanning across files.
+\end{itemize}
+
+\subsection{Supabase Downloader Script}
+This script pulls file metadata from Supabase using project ID and downloads files locally for scanning.
+
+\subsubsection{Steps}
+\begin{itemize}
+    \item Pull file URLs via Supabase SDK.
+    \item Save each file to a temporary folder.
+\end{itemize}
+
+\subsubsection{Scaling Notes}
+\begin{itemize}
+    \item Stream files instead of downloading to disk (memory-efficient).
+    \item Store scan states in DB to retry partial scans.
+\end{itemize}
+
+\subsection{Report Generation API (FastAPI)}
+This microservice serves JSON reports per project via \texttt{GET /report/\{project\_id\}}.
+
+\subsubsection{Steps}
+\begin{itemize}
+    \item Fetch all files and vulnerabilities related to the project ID.
+    \item Aggregate counts by vulnerability type.
+    \item Return a detailed nested structure.
+\end{itemize}
+
+\subsubsection{Output Format Example}
+\begin{lstlisting}[language=json]
+{
+  "project_id": "...",
+  "summary": {
+    "total_files_scanned": 3,
+    "total_vulnerabilities": 5,
+    "vulnerability_counts": {
+      "Hardcoded credentials": 2,
+      "SQL Injection": 2,
+      "XSS": 1
+    }
+  },
+  "files": [ ... ]
+}
+\end{lstlisting}
 
 \subsubsection{Example Finding}
 \begin{verbatim}
@@ -104,13 +201,28 @@ Severity: HIGH
 Suggestion: Use environment variables or secret stores like AWS Secrets Manager.
 \end{verbatim}
 
-\subsection{Report Generation and Frontend: Aranya}
+\subsection{Report Generation and Frontend}
 \textbf{Libraries Used:} ReportLab (PDF), React (Frontend), Tailwind CSS (UI)
+
 \begin{itemize}
     \item Fetches all vulnerability data from Supabase.
     \item Renders a styled, paginated PDF.
     \item Implements download and email options (in progress).
     \item Builds responsive frontend for scanning and viewing past reports.
+\end{itemize}
+
+\subsubsection{Scalability Strategies}
+\begin{itemize}
+    \item Add pagination for large projects.
+    \item Move to GraphQL if complex querying grows.
+    \item Cache frequent queries using Redis.
+\end{itemize}
+
+\subsubsection{Deployment Suggestions}
+\begin{itemize}
+    \item Dockerize the FastAPI service.
+    \item Use Uvicorn with Gunicorn in production.
+    \item Integrate into API Gateway with versioning.
 \end{itemize}
 
 \begin{figure}[h!]
@@ -120,54 +232,70 @@ Suggestion: Use environment variables or secret stores like AWS Secrets Manager.
 \end{figure}
 
 \section{Meeting Summaries and Weekly Progress}
+
 \subsection{Meeting 1 – March 1, 2025}
 \begin{itemize}
-    \item Finalized core services
-    \item Identified target vulnerabilities: SQLi, XSS, Hardcoded credentials
-    \item Chose Supabase for DB layer
-    \item Discussed PDF and CI/CD integration scope
+    \item Finalized core services.
+    \item Identified target vulnerabilities: SQLi, XSS, Hardcoded credentials.
+    \item Chose Supabase for DB layer.
+    \item Discussed PDF and CI/CD integration scope.
 \end{itemize}
 
 \subsection{Meeting 2 – March 15, 2025}
 \begin{itemize}
-    \item Evaluated Python libraries
-    \item Sketched out Lucidchart architecture
-    \item Assigned roles and deliverables
+    \item Evaluated Python libraries.
+    \item Sketched out Lucidchart architecture.
+    \item Assigned roles and deliverables.
 \end{itemize}
 
-\subsection{Meeting 3 – April 4, 2025}
+\subsection{Meeting 3 – April 2, 2025}
 \begin{itemize}
-    \item Finalized implementations for each service
-    \item Authentication deemed as optional for MVP
-    \item Integration plans and Supabase schema locked
+    \item Validated our design \& thought processes with our mentor, Prateek.
+    \item Decided on working on the core services first, and focus less on the additional features.
+    \item Discussed different approaches to find vulnerabilities including LLMs.
+\end{itemize}
+
+\subsection{Meeting 4 – April 9, 2025}
+\begin{itemize}
+    \item Finalized implementations for each service.
+    \item Authentication deemed as optional for MVP.
+    \item Integration plans and Supabase schema locked.
+\end{itemize}
+
+\subsection{Meeting 5 – April 18, 2025}
+\begin{itemize}
+    \item Showed working demo to our mentor, Prateek.
+    \item Validated the fact that authentication can be deemed as optional for MVP.
+    \item Discussed the integration approach \& finalized running Docker containers.
 \end{itemize}
 
 \section{Challenges and Learnings}
+
 \subsection{Challenges}
 \begin{itemize}
-    \item Handling recursive directory fetches for large repos
-    \item Mapping vulnerability lines accurately across file versions
-    \item Balancing PDF readability and detail
+    \item Handling recursive directory fetches for large repositories.
+    \item Mapping vulnerability lines accurately across file versions.
+    \item Balancing PDF readability and detail.
 \end{itemize}
 
 \subsection{Key Learnings}
 \begin{itemize}
-    \item Microservices simplify parallel development
-    \item Supabase speeds up schema iteration and auth integration
-    \item Bandit is fast but must be complemented by manual review or GPT-based tools
+    \item Microservices simplify parallel development.
+    \item Supabase speeds up schema iteration and authentication integration.
+    \item Bandit is fast but must be complemented by manual review or GPT-based tools.
 \end{itemize}
 
 \section{Future Scope}
 \begin{itemize}
-    \item Add GitHub OAuth for scanning private repos
-    \item Email integration for report delivery
-    \item GitHub Action to open Pull Requests for simple fixes
-    \item Auto-scheduling for weekly scans
-    \item Integration with CI/CD tools like Jenkins, CircleCI
-    \item Support for other languages: JavaScript, Go, Java
+    \item Add GitHub OAuth for scanning private repositories.
+    \item Email integration for report delivery.
+    \item GitHub Action to open Pull Requests for simple fixes.
+    \item Auto-scheduling for weekly scans.
+    \item Integration with CI/CD tools like Jenkins, CircleCI.
+    \item Support for other languages: JavaScript, Go, Java.
 \end{itemize}
 
 \section{Conclusion}
-In just six weeks, we’ve built a functional and extendable vulnerability scanning system with full-stack integration. Our modular architecture and shared Supabase backend simplify team collaboration and integration. With upcoming features like authentication, CI/CD integration, and email-based reporting, our platform is well-poised to serve developers and organizations seeking proactive code security solutions.
+In just six weeks, we have built a functional and extendable vulnerability scanning system with full-stack integration. Our modular architecture and shared Supabase backend simplify team collaboration and integration. With upcoming features like authentication, CI/CD integration, and email-based reporting, our platform is well-poised to serve developers and organizations seeking proactive code security solutions.
 
 \end{document}
