@@ -1,0 +1,173 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{longtable}
+\geometry{margin=1in}
+
+\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{1em}{}
+
+\title{\textbf{Progress Report on Source Code Vulnerability Detection Platform}}
+\author{Team Members: Aranya, Tejeshu, Ambica, Aninda}
+\date{April 2025}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Project Overview}
+The digital era has fostered a dramatic increase in the scale and complexity of codebases. With this growth comes an increased surface for vulnerabilities. Detecting these early in the development cycle can significantly reduce security risks. Our project aims to address this by developing a modular, scalable, and developer-friendly platform for identifying and reporting vulnerabilities in Python repositories hosted on GitHub.
+
+\subsection{Motivation}
+Modern DevOps pipelines integrate testing and CI/CD, yet security scanning is often an afterthought. Developers may unintentionally introduce vulnerabilities like hardcoded secrets or fail to properly sanitize inputs. This project intends to close this gap by providing an automated, extensible vulnerability scanner that plugs directly into the development workflow.
+
+\subsection{Goals}
+\begin{itemize}
+    \item Build a modular, microservices-based architecture.
+    \item Automatically parse and clone GitHub repositories.
+    \item Detect common vulnerabilities using static analysis.
+    \item Provide a detailed, downloadable PDF report with summary, severity, and suggestions.
+    \item Enable extensibility for CI/CD integration and user authentication.
+\end{itemize}
+
+\section{System Architecture}
+The platform is divided into three independent services:
+
+\begin{enumerate}
+    \item \textbf{URL Parser} (Tejeshu): Parses GitHub repositories, extracts files recursively.
+    \item \textbf{Vulnerability Detection} (Ambica and Aninda): Runs security scans using Bandit.
+    \item \textbf{Report Generation and Frontend} (Aranya): Renders PDF and web UI.
+\end{enumerate}
+
+Each of these microservices reads from and writes to a shared Supabase PostgreSQL instance. This ensures a seamless data pipeline for integration and consistency.
+
+\subsection{Component Interaction}
+\begin{itemize}
+    \item URL Parser identifies files and metadata, and inserts records into `files` table.
+    \item Vulnerability Scanner picks up pending files and adds corresponding issues into the `vulnerabilities` table.
+    \item Report Generator fetches all data and converts it into structured reports.
+\end{itemize}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.95\textwidth]{Cloud Based Source Code Vulnerability Detector.png}
+\caption{System Architecture Overview}
+\end{figure}
+
+\section{Database Schema and Design}
+Supabase offers a fully managed PostgreSQL backend with a REST interface. Our schema includes:
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.95\textwidth]{WhatsApp Image 2025-03-16 at 00.22.09 (1).jpeg}
+\caption{Database Diagram}
+\end{figure}
+
+
+\subsection{Supabase Features Used}
+\begin{itemize}
+    \item Row Level Security for multi-user access
+    \item JWT Authentication (to be integrated)
+    \item Real-time listening for new file additions
+\end{itemize}
+
+\section{Implementation Details}
+\subsection{URL Parser: Tejeshu}
+\begin{itemize}
+    \item Parses and validates GitHub URLs.
+    \item Recursively fetches Python files using GitHub API.
+    \item Stores metadata in Supabase.
+    \item Handles private/public URLs (to be extended with OAuth).
+\end{itemize}
+
+\subsection{Vulnerability Detection: Ambica and Aninda}
+\textbf{Tools Used:} Bandit – a static analyzer for Python code.
+\begin{itemize}
+    \item Fetches files from DB using Supabase SDK.
+    \item Runs Bandit and extracts JSON output.
+    \item Categorizes vulnerabilities by type and severity.
+    \item Adds remediation advice for each finding.
+\end{itemize}
+
+\subsubsection{Example Finding}
+\begin{verbatim}
+File: auth.py
+Line: 23
+Issue: Hardcoded password string
+Severity: HIGH
+Suggestion: Use environment variables or secret stores like AWS Secrets Manager.
+\end{verbatim}
+
+\subsection{Report Generation and Frontend: Aranya}
+\textbf{Libraries Used:} ReportLab (PDF), React (Frontend), Tailwind CSS (UI)
+\begin{itemize}
+    \item Fetches all vulnerability data from Supabase.
+    \item Renders a styled, paginated PDF.
+    \item Implements download and email options (in progress).
+    \item Builds responsive frontend for scanning and viewing past reports.
+\end{itemize}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.9\textwidth]{WhatsApp Image 2025-04-16 at 01.20.11.jpeg}
+\caption{Sample PDF Report Output}
+\end{figure}
+
+\section{Meeting Summaries and Weekly Progress}
+\subsection{Meeting 1 – March 1, 2025}
+\begin{itemize}
+    \item Finalized core services
+    \item Identified target vulnerabilities: SQLi, XSS, Hardcoded credentials
+    \item Chose Supabase for DB layer
+    \item Discussed PDF and CI/CD integration scope
+\end{itemize}
+
+\subsection{Meeting 2 – March 15, 2025}
+\begin{itemize}
+    \item Evaluated Python libraries
+    \item Sketched out Lucidchart architecture
+    \item Assigned roles and deliverables
+\end{itemize}
+
+\subsection{Meeting 3 – April 4, 2025}
+\begin{itemize}
+    \item Finalized implementations for each service
+    \item Authentication deemed as optional for MVP
+    \item Integration plans and Supabase schema locked
+\end{itemize}
+
+\section{Challenges and Learnings}
+\subsection{Challenges}
+\begin{itemize}
+    \item Handling recursive directory fetches for large repos
+    \item Mapping vulnerability lines accurately across file versions
+    \item Balancing PDF readability and detail
+\end{itemize}
+
+\subsection{Key Learnings}
+\begin{itemize}
+    \item Microservices simplify parallel development
+    \item Supabase speeds up schema iteration and auth integration
+    \item Bandit is fast but must be complemented by manual review or GPT-based tools
+\end{itemize}
+
+\section{Future Scope}
+\begin{itemize}
+    \item Add GitHub OAuth for scanning private repos
+    \item Email integration for report delivery
+    \item GitHub Action to open Pull Requests for simple fixes
+    \item Auto-scheduling for weekly scans
+    \item Integration with CI/CD tools like Jenkins, CircleCI
+    \item Support for other languages: JavaScript, Go, Java
+\end{itemize}
+
+\section{Conclusion}
+In just six weeks, we’ve built a functional and extendable vulnerability scanning system with full-stack integration. Our modular architecture and shared Supabase backend simplify team collaboration and integration. With upcoming features like authentication, CI/CD integration, and email-based reporting, our platform is well-poised to serve developers and organizations seeking proactive code security solutions.
+
+\end{document}
