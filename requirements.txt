@@ -4,3 +4,4 @@ python-dotenv
 supabase-py
 requests
 httpx
+vllm
