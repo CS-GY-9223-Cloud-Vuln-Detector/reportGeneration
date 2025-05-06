@@ -10,64 +10,104 @@
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-4xl mx-auto py-10 px-4">
     <h1 class="text-3xl font-bold mb-6">🔍 Vulnerability Report</h1>
+
+    <!-- Inputs & Fetch button -->
+    <div class="flex mb-4 space-x-2">
+      <input id="projectId"
+             type="text"
+             placeholder="Enter Project ID"
+             class="flex-grow px-4 py-2 border rounded focus:outline-none focus:ring" />
+      <input id="scanId"
+             type="text"
+             placeholder="Enter Scan ID"
+             class="flex-grow px-4 py-2 border rounded focus:outline-none focus:ring" />
+      <button id="fetchBtn"
+              class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+        Fetch
+      </button>
+    </div>
+
+    <!-- Download PDF link (hidden until a report is loaded) -->
+    <div class="mb-6">
+      <a id="downloadPdf"
+         href="#"
+         download
+         class="hidden px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+        Download PDF
+      </a>
+    </div>
+
+    <!-- Summary & details -->
     <div id="summary" class="mb-6"></div>
-    <div id="files"></div>
+    <div id="vulns" class="space-y-6"></div>
   </div>
 
   <script>
-    const PROJECT_ID = "00000000-0000-0000-0000-000000000001";
-    const API_URL = `http://localhost:8000/report/${PROJECT_ID}`;
+  document.getElementById('fetchBtn').onclick = async () => {
+    const projectId = document.getElementById('projectId').value.trim();
+    const scanId    = document.getElementById('scanId').value.trim();
+    if (!projectId || !scanId) {
+      return alert('Please enter both Project ID and Scan ID.');
+    }
 
-    axios.get(API_URL)
-      .then(response => {
-        const data = response.data;
-        const summary = document.getElementById('summary');
-        const filesContainer = document.getElementById('files');
+    const summaryEl = document.getElementById('summary');
+    const vulnsEl   = document.getElementById('vulns');
+    const downloadEl = document.getElementById('downloadPdf');
 
-        // Summary
-        summary.innerHTML = `
-          <div class="bg-white border border-gray-200 shadow rounded p-4">
-            <p><strong>Project ID:</strong> ${data.project_id}</p>
-            <p><strong>Total Files Scanned:</strong> ${data.summary.total_files_scanned}</p>
-            <p><strong>Total Vulnerabilities:</strong> ${data.summary.total_vulnerabilities}</p>
-            <div class="mt-2">
-              <strong>Vulnerability Counts:</strong>
-              <ul class="list-disc ml-5 mt-1">
-                ${Object.entries(data.summary.vulnerability_counts).map(([type, count]) => 
-                  `<li>${type}: ${count}</li>`).join('')}
-              </ul>
-            </div>
-          </div>
-        `;
+    // reset UI
+    summaryEl.innerHTML = '<p class="italic">Loading…</p>';
+    vulnsEl.innerHTML   = '';
+    downloadEl.classList.add('hidden');
+    downloadEl.removeAttribute('href');
 
-        // Files + vulnerabilities
-        data.files.forEach(file => {
+    try {
+      const url = `/report/${encodeURIComponent(projectId)}/${encodeURIComponent(scanId)}`;
+      const res = await axios.get(url);
+      const data = res.data;
+
+      // show download link
+      downloadEl.href = url + '/pdf';
+      downloadEl.classList.remove('hidden');
+
+      // Render summary
+      summaryEl.innerHTML = `
+        <div class="bg-white border border-gray-200 shadow rounded p-4">
+          <p><strong>Project:</strong> ${data.project_id}</p>
+          <p><strong>Scan:</strong> ${data.scan_id}</p>
+          <p><strong>Total Vulnerabilities:</strong> ${data.summary.total_vulnerabilities}</p>
+          <p><strong>Files Affected:</strong> ${data.summary.unique_files}</p>
+        </div>
+      `;
+
+      // Render each vuln
+      if (data.vulnerabilities.length === 0) {
+        vulnsEl.innerHTML = '<p class="italic">No vulnerabilities found.</p>';
+      } else {
+        data.vulnerabilities.forEach(v => {
           const card = document.createElement('div');
-          card.className = "bg-white shadow border border-gray-100 rounded-lg mt-6";
+          card.className = 'bg-white shadow border border-gray-100 rounded-lg';
           card.innerHTML = `
             <div class="p-4 border-b border-gray-200 bg-gray-50">
-              <h2 class="text-xl font-semibold">${file.file_name}</h2>
-              <p class="text-sm text-gray-600">Type: ${file.file_type} • LOC: ${file.loc}</p>
-              <a href="${file.file_url}" target="_blank" class="text-blue-500 text-sm underline">View File</a>
+              <h2 class="text-xl font-semibold">${v.file_name}</h2>
+              <p class="text-sm text-gray-600">Type: ${v.file_type} • LOC: ${v.loc}</p>
+              <a href="${v.file_url}" target="_blank" class="text-blue-500 text-sm underline">View File</a>
             </div>
-            <div class="p-4 space-y-4">
-              ${file.vulnerabilities.map(vuln => `
-                <div class="bg-red-50 border border-red-300 rounded-md p-3">
-                  <p class="font-medium text-red-700">${vuln.type}</p>
-                  <p class="text-sm">${vuln.description}</p>
-                  <p class="text-xs text-gray-500">Lines: ${vuln.line_from}–${vuln.line_to}</p>
-                  <p class="text-xs text-gray-400">Detected on: ${new Date(vuln.created_at).toLocaleString()}</p>
-                  <p class="text-xs text-green-700 mt-1"><strong>Fix Suggestion:</strong> ${vuln.suggestion || "No suggestion available."}</p>
-                </div>
-              `).join('')}
+            <div class="p-4 space-y-2">
+              <p class="text-xs text-gray-500">Lines: ${v.line_from}–${v.line_to}</p>
+              <p class="text-sm text-red-700"><strong>Description:</strong> ${v.vuln_description}</p>
+              <pre class="bg-gray-100 p-2 rounded overflow-x-auto text-sm">${v.code}</pre>
+              <p class="text-sm text-green-700"><strong>Suggestion:</strong> ${v.suggestion}</p>
             </div>
           `;
-          filesContainer.appendChild(card);
+          vulnsEl.appendChild(card);
         });
-      })
-      .catch(err => {
-        document.body.innerHTML = `<div class="text-red-600 text-center mt-10">❌ Error fetching report: ${err.message}</div>`;
-      });
+      }
+
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.response?.data?.message || err.message;
+      summaryEl.innerHTML = `<p class="text-red-600">Error: ${msg}</p>`;
+    }
+  };
   </script>
 </body>
 </html>
