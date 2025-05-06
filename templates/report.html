@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Vuln Report {{ report.project_id }} / {{ report.scan_id }}</title>
+  <style>
+    body { font-family: sans-serif; margin: 1em; }
+    h1 { font-size: 1.4em; }
+    .vuln { margin-bottom: 1.2em; border-bottom: 1px solid #ccc; padding-bottom:0.8em; }
+    pre  { background: #f8f8f8; padding:0.5em; }
+  </style>
+</head>
+<body>
+  <h1>Project {{ report.project_id }} / Scan {{ report.scan_id }}</h1>
+  <p>Total vulnerabilities: {{ report.summary.total_vulnerabilities }}</p>
+  <p>Files affected: {{ report.summary.unique_files }}</p>
+  {% for v in report.vulnerabilities %}
+    <div class="vuln">
+      <h2>{{ v.file_name }} (lines {{ v.line_from }}–{{ v.line_to }})</h2>
+      <p><strong>Issue:</strong> {{ v.vuln_description }}</p>
+      <pre>{{ v.code }}</pre>
+      <p><strong>Fix:</strong> {{ v.suggestion }}</p>
+    </div>
+  {% endfor %}
+</body>
+</html>
