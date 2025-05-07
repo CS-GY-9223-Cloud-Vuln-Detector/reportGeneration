@@ -6,6 +6,8 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import os, httpx, asyncio
 from typing import Optional
+from functools import wraps
+from flask import request, jsonify, g
 
 # Load configuration
 dotenv_path = os.getenv("DOTENV_PATH", None)
@@ -34,6 +36,53 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="."), name="static")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def token_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = None
+        # Check for bearer token in Authorization header
+        if "Authorization" in request.headers:
+            auth_header = request.headers["Authorization"]
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+
+        if not token:
+            return jsonify({"error": "Authentication Token is missing!"}), 401
+
+        try:
+            # Verify token with Supabase (adapting logic from core/security.py [cite: 1])
+            user_response = supabase.auth.get_user(token)
+
+            if not user_response or not user_response.user:
+                return jsonify({"error": "Invalid or expired token"}), 401
+
+            user_id = user_response.user.id
+
+            # Fetch the user profile from your 'user_profiles' table
+            profile_response = (
+                supabase.table("user_profiles").select("*").eq("id", user_id).execute()
+            )
+
+            if not profile_response.data:
+                # This case might happen if user exists in auth but not profiles table
+                return jsonify({"error": "User profile not found"}), 404
+
+            # Store the fetched profile in Flask's 'g' object for access in the route
+            g.current_user_profile = profile_response.data[0]
+
+        except Exception as e:
+            print(f"Authentication error: {str(e)}")  # Log error
+            # Check for specific Supabase/JWT errors if possible, otherwise return general error
+            if "invalid JWT" in str(e).lower() or "token is invalid" in str(e).lower():
+                return jsonify({"error": "Invalid or expired token"}), 401
+            return jsonify({"error": "Could not validate credentials"}), 401
+
+        # Proceed to the decorated route function
+        return f(*args, **kwargs)
+
+    return decorated_function
+
 @app.get("/", include_in_schema=False)
 async def serve_index():
     return FileResponse("index.html")
@@ -52,13 +101,15 @@ async def fetch_suggestion(prompt: str) -> Optional[str]:
         return None
 
 @app.get("/report/{project_id}/{scan_id}")
+@token_required
 async def report_scan(project_id: str, scan_id: str):
     # Verify the scan belongs to the project
     scan_resp = (
         supabase
-        .table("scans")
-        .select("project_id")
+        .from_("scans")
+        .select("project_id, projects!inner(project_owner)")
         .eq("id", scan_id)
+        .eq("projects.project_owner", g.current_user_profile.id)
         .single()
         .execute()
     )
